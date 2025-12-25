@@ -275,26 +275,21 @@ export function BarcodeScanner({ open, onClose, onScan }: BarcodeScannerProps) {
               </Button>
             )}
           </div>
-          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 text-center text-xs text-muted-foreground space-y-1">
-            <p>
-              Si usas un equipo USB o un celular conectado al ordenador, abre esta pantalla desde el navegador del dispositivo, acepta los permisos y selecciona la cámara correcta.
-            </p>
-            <p>
-              Si no aparece la cámara, desconecta/reconecta el dispositivo y vuelve a pulsar "Reintentar".
-            </p>
-            <p className="text-[11px] font-semibold text-foreground">
+          {/* Status message - compact */}
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/50 px-3 py-1 rounded-full">
+            <p className="text-[11px] font-medium text-white">
               {statusMessage}
             </p>
           </div>
         </div>
 
-        <div className="p-4 pt-2 text-center">
-          <p className="text-sm text-muted-foreground">
-            Apunta la cámara al código de barras
+        <div className="p-3 flex items-center justify-between border-t">
+          <p className="text-xs text-muted-foreground">
+            Apunta al código de barras
           </p>
-          <Button variant="ghost" onClick={handleClose} className="mt-2">
-            <X className="w-4 h-4 mr-2" />
-            Cancelar
+          <Button variant="ghost" size="sm" onClick={handleClose}>
+            <X className="w-4 h-4 mr-1" />
+            Cerrar
           </Button>
         </div>
       </DialogContent>
