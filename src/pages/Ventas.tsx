@@ -14,7 +14,9 @@ import {
   X,
   CheckCircle2,
   Printer,
-  Package
+  Package,
+  Camera,
+  Download
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,7 +41,9 @@ import {
 import { toast } from 'sonner';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useStore } from '@/lib/store';
-import type { PaymentMethod } from '@/types/inventory';
+import { BarcodeScanner } from '@/components/BarcodeScanner';
+import { printTicket, downloadTicket } from '@/lib/ticketPdf';
+import type { PaymentMethod, Sale } from '@/types/inventory';
 import { cn } from '@/lib/utils';
 
 function formatCurrency(amount: number) {
@@ -54,7 +58,8 @@ export default function Ventas() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
-  const [lastSale, setLastSale] = useState<{ saleNumber: string; total: number; change: number } | null>(null);
+  const [showScanner, setShowScanner] = useState(false);
+  const [lastSale, setLastSale] = useState<Sale | null>(null);
   
   // Payment form
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('efectivo');
@@ -147,6 +152,25 @@ export default function Ventas() {
     }
   };
 
+  // Handle scanned barcode from camera
+  const handleBarcodeScanned = (code: string) => {
+    const result = getVariantByBarcode(code);
+    if (result) {
+      if (result.variant.stock <= 0) {
+        toast.error('Producto agotado', {
+          description: `${result.product.name} no tiene stock disponible`,
+        });
+      } else {
+        addToCart(result.variant, result.product);
+        toast.success('Agregado al carrito', {
+          description: `${result.product.name} - ${result.variant.size || ''} ${result.variant.color || ''}`,
+        });
+      }
+    } else {
+      toast.error('Producto no encontrado', { description: code });
+    }
+  };
+
   const handleAddToCart = (variant: typeof products[0]['variants'][0], product: typeof products[0]) => {
     const cartItem = cart.find((item) => item.variant.id === variant.id);
     const currentQty = cartItem?.quantity || 0;
@@ -207,11 +231,7 @@ export default function Ventas() {
     );
 
     if (sale) {
-      setLastSale({
-        saleNumber: sale.saleNumber,
-        total: sale.total,
-        change: sale.change,
-      });
+      setLastSale(sale);
       setShowPaymentDialog(false);
       setShowSuccessDialog(true);
       
@@ -253,28 +273,39 @@ export default function Ventas() {
             </CardHeader>
             <CardContent className="flex-1 flex flex-col overflow-hidden p-4 pt-0">
               {/* Search Input */}
-              <div className="relative mb-4">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  ref={searchRef}
-                  type="text"
-                  placeholder="Escanear código o buscar producto..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={handleSearchKeyDown}
-                  className="pl-10 h-12 text-base"
-                  autoFocus
-                />
-                {searchQuery && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8"
-                    onClick={() => setSearchQuery('')}
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                )}
+              <div className="relative mb-4 flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    ref={searchRef}
+                    type="text"
+                    placeholder="Escanear código o buscar producto..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={handleSearchKeyDown}
+                    className="pl-10 h-12 text-base"
+                    autoFocus
+                  />
+                  {searchQuery && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8"
+                      onClick={() => setSearchQuery('')}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-12 w-12 shrink-0"
+                  onClick={() => setShowScanner(true)}
+                  title="Escanear con cámara"
+                >
+                  <Camera className="w-5 h-5" />
+                </Button>
               </div>
 
               {/* Search Results */}
@@ -597,9 +628,21 @@ export default function Ventas() {
             </div>
           </div>
           <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button variant="outline" className="flex-1">
+            <Button 
+              variant="outline" 
+              className="flex-1"
+              onClick={() => lastSale && printTicket(lastSale, storeConfig)}
+            >
               <Printer className="w-4 h-4 mr-2" />
-              Imprimir ticket
+              Imprimir
+            </Button>
+            <Button 
+              variant="outline" 
+              className="flex-1"
+              onClick={() => lastSale && downloadTicket(lastSale, storeConfig)}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Descargar PDF
             </Button>
             <Button onClick={handleCloseSuccess} className="flex-1">
               Nueva venta
@@ -607,6 +650,13 @@ export default function Ventas() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Barcode Scanner */}
+      <BarcodeScanner
+        open={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScan={handleBarcodeScanned}
+      />
     </AppLayout>
   );
 }
