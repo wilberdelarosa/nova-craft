@@ -105,6 +105,9 @@ export default function Ventas() {
     fetchExchangeRate
   } = useStore();
 
+  // Tasa de cambio con valor por defecto
+  const exchangeRate = storeConfig?.exchangeRate?.USD_DOP ?? 60;
+
   // Función de formato según moneda
   const formatCurrency = (amount: number) => {
     return saleCurrency === 'DOP' ? formatDOP(amount) : formatUSD(amount);
@@ -113,7 +116,7 @@ export default function Ventas() {
   // Convertir precio según moneda
   const convertPrice = (priceDOP: number) => {
     if (saleCurrency === 'USD') {
-      return priceDOP / storeConfig.exchangeRate.USD_DOP;
+      return priceDOP / exchangeRate;
     }
     return priceDOP;
   };
