@@ -38,12 +38,15 @@ export interface Product {
   supplierId?: string;
   cost: number;
   price: number;
+  priceDOP: number; // Precio en Peso Dominicano
+  priceUSD: number; // Precio en Dólares
   taxRate: number;
   active: boolean;
   createdAt: Date;
   updatedAt: Date;
   images: ImageAsset[];
   variants: Variant[];
+  tags?: string[];
 }
 
 export interface Variant {
@@ -54,6 +57,8 @@ export interface Variant {
   color?: string;
   barcode?: string;
   priceOverride?: number;
+  priceDOPOverride?: number;
+  priceUSDOverride?: number;
   stock: number;
   minStock: number;
   active: boolean;
@@ -83,6 +88,7 @@ export interface InventoryMovement {
 
 export type PaymentMethod = 'efectivo' | 'tarjeta' | 'transferencia';
 export type SaleStatus = 'completada' | 'cancelada' | 'devuelta';
+export type Currency = 'DOP' | 'USD';
 
 export interface Sale {
   id: string;
@@ -90,10 +96,13 @@ export interface Sale {
   userId: string;
   customerName?: string;
   customerPhone?: string;
+  customerRNC?: string;
   subtotal: number;
   tax: number;
   discount: number;
   total: number;
+  currency: Currency;
+  exchangeRate: number;
   paymentMethod: PaymentMethod;
   amountReceived: number;
   change: number;
@@ -122,18 +131,25 @@ export interface CartItem {
   unitPrice: number;
 }
 
+export interface ExchangeRate {
+  USD_DOP: number;
+  lastUpdated: Date;
+  source: string;
+}
+
 export interface StoreConfig {
   storeName: string;
   storeAddress?: string;
   storePhone?: string;
   storeEmail?: string;
   logoUrl?: string;
-  currency: string;
+  currency: Currency;
   defaultTaxRate: number;
   ticketTemplate: 'informal' | 'fiscal';
   ticketSeriesPrefix: string;
   lastTicketNumber: number;
   ticketFooter?: string;
+  exchangeRate: ExchangeRate;
 }
 
 export interface DashboardStats {
@@ -155,4 +171,32 @@ export interface AuditLog {
   entityId: string;
   details: Record<string, unknown>;
   createdAt: Date;
+}
+
+// Búsqueda inteligente
+export interface SmartSearchParams {
+  query: string;
+  category?: string;
+  brand?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  inStock?: boolean;
+  tags?: string[];
+  supplier?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
+  paymentMethod?: PaymentMethod;
+  status?: SaleStatus;
+}
+
+// Reportes dinámicos
+export interface ReportFilter {
+  startDate: Date;
+  endDate: Date;
+  category?: string;
+  brand?: string;
+  paymentMethod?: PaymentMethod;
+  status?: SaleStatus;
+  groupBy: 'day' | 'week' | 'month' | 'year';
+  currency: Currency;
 }

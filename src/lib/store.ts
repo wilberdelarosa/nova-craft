@@ -13,8 +13,54 @@ import type {
   Brand,
   Supplier,
   User,
-  AuditLog
+  AuditLog,
+  ExchangeRate,
+  Currency,
+  SmartSearchParams
 } from '@/types/inventory';
+
+// Utilidades de formato para DOP y USD
+export const formatDOP = (amount: number): string => {
+  return new Intl.NumberFormat('es-DO', {
+    style: 'currency',
+    currency: 'DOP',
+    minimumFractionDigits: 2
+  }).format(amount);
+};
+
+export const formatUSD = (amount: number): string => {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2
+  }).format(amount);
+};
+
+export const formatCurrency = (amount: number, currency: Currency): string => {
+  return currency === 'DOP' ? formatDOP(amount) : formatUSD(amount);
+};
+
+export const convertDOPtoUSD = (dop: number, rate: number): number => {
+  return rate > 0 ? dop / rate : 0;
+};
+
+export const convertUSDtoDOP = (usd: number, rate: number): number => {
+  return usd * rate;
+};
+
+// Generador de código de barras único
+export const generateBarcode = (prefix = 'RD'): string => {
+  const timestamp = Date.now().toString().slice(-8);
+  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+  return `${prefix}${timestamp}${random}`;
+};
+
+// Generador de SKU
+export const generateSKU = (category: string): string => {
+  const prefix = category.substring(0, 3).toUpperCase();
+  const random = Math.floor(Math.random() * 100000).toString().padStart(5, '0');
+  return `${prefix}-${random}`;
+};
 
 // Sample data generators
 const generateId = () => Math.random().toString(36).substring(2, 11);
@@ -247,6 +293,7 @@ interface StoreState {
   
   // Actions - Products
   addProduct: (product: Omit<Product, 'id' | 'createdAt' | 'updatedAt' | 'images' | 'variants'>) => Product;
+  addProductQuick: (name: string, priceDOP: number, barcode?: string, category?: string) => Product;
   updateProduct: (id: string, updates: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
   addVariant: (productId: string, variant: Omit<Variant, 'id' | 'productId'>) => Variant;
@@ -262,16 +309,19 @@ interface StoreState {
   clearCart: () => void;
   
   // Actions - Sales
-  completeSale: (paymentMethod: PaymentMethod, amountReceived: number, customerName?: string, customerPhone?: string, discount?: number) => Sale | null;
+  completeSale: (paymentMethod: PaymentMethod, amountReceived: number, customerName?: string, customerPhone?: string, discount?: number, currency?: Currency) => Sale | null;
   
   // Actions - Config
   updateStoreConfig: (updates: Partial<StoreConfig>) => void;
+  updateExchangeRate: (rate: number, source?: string) => void;
+  fetchExchangeRate: () => Promise<void>;
   
   // Helpers
   getProductById: (id: string) => Product | undefined;
   getVariantById: (variantId: string) => { variant: Variant; product: Product } | undefined;
   getVariantByBarcode: (barcode: string) => { variant: Variant; product: Product } | undefined;
   searchProducts: (query: string) => Product[];
+  smartSearch: (params: SmartSearchParams) => { products: Product[]; sales: Sale[] };
   getLowStockVariants: () => { variant: Variant; product: Product }[];
   getOutOfStockVariants: () => { variant: Variant; product: Product }[];
   getDashboardStats: () => {
@@ -281,6 +331,7 @@ interface StoreState {
     lowStockCount: number;
     outOfStockCount: number;
   };
+  getCategories: () => string[];
 }
 
 export const useStore = create<StoreState>()(
@@ -298,15 +349,20 @@ export const useStore = create<StoreState>()(
       auditLogs: [],
       cart: [],
       storeConfig: {
-        storeName: 'Mi Tienda de Ropa',
-        storeAddress: 'Av. Principal #123, Col. Centro',
-        storePhone: '55 1234 5678',
+        storeName: 'Mi Tienda',
+        storeAddress: 'Av. Principal #123',
+        storePhone: '809-555-1234',
         storeEmail: 'ventas@mitienda.com',
-        currency: 'MXN',
-        defaultTaxRate: 16,
+        currency: 'DOP' as Currency,
+        defaultTaxRate: 18, // ITBIS en RD
         ticketTemplate: 'informal',
         ticketSeriesPrefix: 'VTA',
         lastTicketNumber: 3,
+        exchangeRate: {
+          USD_DOP: 57.0,
+          lastUpdated: new Date(),
+          source: 'Manual'
+        }
       },
 
       // Auth actions
@@ -341,6 +397,48 @@ export const useStore = create<StoreState>()(
           images: [],
           variants: [],
         };
+        set((state) => ({ products: [...state.products, newProduct] }));
+        return newProduct;
+      },
+
+      // Agregar producto rápido con código de barras
+      addProductQuick: (name, priceDOP, barcode, category = 'General') => {
+        const state = get();
+        const rate = state.storeConfig.exchangeRate.USD_DOP;
+        const priceUSD = convertDOPtoUSD(priceDOP, rate);
+        const generatedBarcode = barcode || generateBarcode();
+        const sku = generateSKU(category);
+
+        const newProduct: Product = {
+          id: generateId(),
+          sku,
+          name,
+          description: '',
+          categoryId: category,
+          cost: priceDOP * 0.7, // Estimado 30% margen
+          price: priceDOP,
+          priceDOP,
+          priceUSD,
+          taxRate: state.storeConfig.defaultTaxRate,
+          active: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          images: [],
+          variants: [{
+            id: generateId(),
+            productId: '',
+            variantSku: sku + '-DEF',
+            barcode: generatedBarcode,
+            stock: 1,
+            minStock: 1,
+            active: true
+          }],
+          tags: []
+        };
+
+        // Actualizar el productId en la variante
+        newProduct.variants[0].productId = newProduct.id;
+
         set((state) => ({ products: [...state.products, newProduct] }));
         return newProduct;
       },
@@ -542,6 +640,31 @@ export const useStore = create<StoreState>()(
         }));
       },
 
+      updateExchangeRate: (rate, source = 'Manual') => {
+        set((state) => ({
+          storeConfig: {
+            ...state.storeConfig,
+            exchangeRate: {
+              USD_DOP: rate,
+              lastUpdated: new Date(),
+              source
+            }
+          }
+        }));
+      },
+
+      fetchExchangeRate: async () => {
+        try {
+          const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+          const data = await response.json();
+          if (data.rates && data.rates.DOP) {
+            get().updateExchangeRate(data.rates.DOP, 'ExchangeRate-API');
+          }
+        } catch (error) {
+          console.error('Error fetching exchange rate:', error);
+        }
+      },
+
       // Helpers
       getProductById: (id) => get().products.find((p) => p.id === id),
 
@@ -569,12 +692,100 @@ export const useStore = create<StoreState>()(
           (p) =>
             p.name.toLowerCase().includes(q) ||
             p.sku.toLowerCase().includes(q) ||
+            p.description?.toLowerCase().includes(q) ||
+            p.tags?.some(t => t.toLowerCase().includes(q)) ||
             p.variants.some(
               (v) =>
                 v.variantSku.toLowerCase().includes(q) ||
-                v.barcode?.toLowerCase().includes(q)
+                v.barcode?.toLowerCase().includes(q) ||
+                v.color?.toLowerCase().includes(q) ||
+                v.size?.toLowerCase().includes(q)
             )
         );
+      },
+
+      // Búsqueda inteligente con múltiples parámetros
+      smartSearch: (params) => {
+        const state = get();
+        const { query, category, brand, minPrice, maxPrice, inStock, tags, supplier, dateFrom, dateTo, paymentMethod, status } = params;
+        
+        // Búsqueda de productos
+        let products = state.products.filter(p => p.active);
+        
+        if (query) {
+          const q = query.toLowerCase();
+          products = products.filter(p =>
+            p.name.toLowerCase().includes(q) ||
+            p.sku.toLowerCase().includes(q) ||
+            p.description?.toLowerCase().includes(q) ||
+            p.tags?.some(t => t.toLowerCase().includes(q)) ||
+            p.variants.some(v =>
+              v.variantSku.toLowerCase().includes(q) ||
+              v.barcode?.toLowerCase().includes(q) ||
+              v.color?.toLowerCase().includes(q) ||
+              v.size?.toLowerCase().includes(q)
+            )
+          );
+        }
+        
+        if (category) {
+          products = products.filter(p => p.categoryId === category);
+        }
+        
+        if (brand) {
+          products = products.filter(p => p.brandId === brand);
+        }
+        
+        if (minPrice !== undefined) {
+          products = products.filter(p => p.priceDOP >= minPrice || p.price >= minPrice);
+        }
+        
+        if (maxPrice !== undefined) {
+          products = products.filter(p => p.priceDOP <= maxPrice || p.price <= maxPrice);
+        }
+        
+        if (inStock) {
+          products = products.filter(p => p.variants.some(v => v.stock > 0));
+        }
+        
+        if (tags && tags.length > 0) {
+          products = products.filter(p => p.tags?.some(t => tags.includes(t)));
+        }
+        
+        if (supplier) {
+          products = products.filter(p => p.supplierId === supplier);
+        }
+        
+        // Búsqueda de ventas
+        let sales = state.sales;
+        
+        if (query) {
+          const q = query.toLowerCase();
+          sales = sales.filter(s =>
+            s.saleNumber.toLowerCase().includes(q) ||
+            s.customerName?.toLowerCase().includes(q) ||
+            s.customerPhone?.includes(q) ||
+            s.items.some(i => i.productName.toLowerCase().includes(q))
+          );
+        }
+        
+        if (dateFrom) {
+          sales = sales.filter(s => new Date(s.createdAt) >= dateFrom);
+        }
+        
+        if (dateTo) {
+          sales = sales.filter(s => new Date(s.createdAt) <= dateTo);
+        }
+        
+        if (paymentMethod) {
+          sales = sales.filter(s => s.paymentMethod === paymentMethod);
+        }
+        
+        if (status) {
+          sales = sales.filter(s => s.status === status);
+        }
+        
+        return { products, sales };
       },
 
       getLowStockVariants: () => {
