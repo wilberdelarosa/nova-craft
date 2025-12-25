@@ -39,6 +39,8 @@ import {
 } from '@/components/ui/sheet';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useStore } from '@/lib/store';
+import { printTicket } from '@/lib/ticketPdf';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { Sale, InventoryMovement } from '@/types/inventory';
 
@@ -58,7 +60,7 @@ export default function Historial() {
   
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
 
-  const { sales, movements, getVariantById } = useStore();
+  const { sales, movements, getVariantById, storeConfig } = useStore();
 
   // Filter sales
   const filteredSales = useMemo(() => {
@@ -298,7 +300,18 @@ export default function Historial() {
                                 >
                                   <Eye className="w-4 h-4" />
                                 </Button>
-                                <Button variant="ghost" size="icon">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => {
+                                    const ok = printTicket(sale, storeConfig);
+                                    if (!ok) {
+                                      toast.error('No se pudo abrir la ventana de impresión', {
+                                        description: 'Permite ventanas emergentes o usa "Descargar PDF" desde Ventas',
+                                      });
+                                    }
+                                  }}
+                                >
                                   <Printer className="w-4 h-4" />
                                 </Button>
                               </div>
@@ -508,7 +521,17 @@ export default function Historial() {
                 </div>
               </div>
 
-              <Button className="w-full">
+              <Button
+                className="w-full"
+                onClick={() => {
+                  const ok = printTicket(selectedSale, storeConfig);
+                  if (!ok) {
+                    toast.error('No se pudo abrir la ventana de impresión', {
+                      description: 'Permite ventanas emergentes o usa "Descargar PDF" desde Ventas',
+                    });
+                  }
+                }}
+              >
                 <Printer className="w-4 h-4 mr-2" />
                 Reimprimir ticket
               </Button>

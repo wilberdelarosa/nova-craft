@@ -21,7 +21,8 @@ export function generateTicketPdf(sale: Sale, storeConfig: StoreConfig): jsPDF {
   const width = 80;
   const doc = new jsPDF({
     unit: 'mm',
-    format: [width, 200], // Height will auto-adjust conceptually
+    // Use a generous height to avoid clipping long tickets.
+    format: [width, 400],
   });
 
   const margin = 4;
@@ -208,11 +209,13 @@ export function printTicket(sale: Sale, storeConfig: StoreConfig) {
   const pdfUrl = URL.createObjectURL(pdfBlob);
   
   const printWindow = window.open(pdfUrl, '_blank');
-  if (printWindow) {
-    printWindow.onload = () => {
-      printWindow.print();
-    };
-  }
+  if (!printWindow) return false;
+
+  printWindow.onload = () => {
+    printWindow.print();
+  };
+
+  return true;
 }
 
 export function downloadTicket(sale: Sale, storeConfig: StoreConfig) {

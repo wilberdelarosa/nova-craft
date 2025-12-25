@@ -1,565 +1,508 @@
 import { useState, useMemo } from 'react';
 import {
-  BarChart3,
-  TrendingUp,
-  TrendingDown,
-  Package,
-  DollarSign,
-  Calendar,
-  Download,
-  FileText,
-  ShoppingCart,
-  Users,
-  ArrowUpRight,
-  ArrowDownRight
+    BarChart3,
+    TrendingUp,
+    DollarSign,
+    ShoppingBag,
+    Package,
+    ArrowUpRight,
+    ArrowDownRight,
+    Calendar,
+    FileText,
+    Download
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Separator } from '@/components/ui/separator';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
 } from '@/components/ui/select';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useStore } from '@/lib/store';
-import { format, subDays, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
-import { es } from 'date-fns/locale';
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell
+    AreaChart,
+    Area,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    ResponsiveContainer,
+    BarChart,
+    Bar,
+    PieChart,
+    Pie,
+    Cell
 } from 'recharts';
 
 function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('es-MX', {
-    style: 'currency',
-    currency: 'MXN',
-  }).format(amount);
+    return new Intl.NumberFormat('es-MX', {
+        style: 'currency',
+        currency: 'MXN',
+    }).format(amount);
 }
 
-const COLORS = ['hsl(var(--primary))', 'hsl(var(--accent))', 'hsl(var(--secondary))', '#fbbf24', '#f472b6', '#a78bfa'];
+const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
 export default function Reportes() {
-  const [dateRange, setDateRange] = useState('7');
-  const { sales, products } = useStore();
+    const [period, setPeriod] = useState<'week' | 'month' | 'year'>('month');
+    const { sales, products, storeConfig } = useStore();
 
-  const filteredSales = useMemo(() => {
-    const days = parseInt(dateRange);
-    const startDate = startOfDay(subDays(new Date(), days));
-    const endDate = endOfDay(new Date());
+    // Métricas del período seleccionado
+    const metrics = useMemo(() => {
+        const now = new Date();
+        let startDate: Date;
+        let prevStartDate: Date;
+        let prevEndDate: Date;
 
-    return sales.filter(sale =>
-      isWithinInterval(new Date(sale.createdAt), { start: startDate, end: endDate })
-    );
-  }, [sales, dateRange]);
-
-  // Estadísticas generales
-  const stats = useMemo(() => {
-    const totalSales = filteredSales.reduce((sum, sale) => sum + sale.total, 0);
-    const totalItems = filteredSales.reduce((sum, sale) => 
-      sum + sale.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0
-    );
-    const avgTicket = filteredSales.length > 0 ? totalSales / filteredSales.length : 0;
-    
-    // Comparación con período anterior
-    const days = parseInt(dateRange);
-    const prevStartDate = startOfDay(subDays(new Date(), days * 2));
-    const prevEndDate = endOfDay(subDays(new Date(), days + 1));
-    
-    const prevSales = sales.filter(sale =>
-      isWithinInterval(new Date(sale.createdAt), { start: prevStartDate, end: prevEndDate })
-    );
-    const prevTotal = prevSales.reduce((sum, sale) => sum + sale.total, 0);
-    const salesGrowth = prevTotal > 0 ? ((totalSales - prevTotal) / prevTotal) * 100 : 0;
-
-    return {
-      totalSales,
-      totalItems,
-      avgTicket,
-      salesCount: filteredSales.length,
-      salesGrowth
-    };
-  }, [filteredSales, sales, dateRange]);
-
-  // Ventas por día
-  const dailySales = useMemo(() => {
-    const days = parseInt(dateRange);
-    const data: { date: string; total: number; count: number }[] = [];
-
-    for (let i = days; i >= 0; i--) {
-      const date = subDays(new Date(), i);
-      const dayStart = startOfDay(date);
-      const dayEnd = endOfDay(date);
-      
-      const daySales = filteredSales.filter(sale =>
-        isWithinInterval(new Date(sale.createdAt), { start: dayStart, end: dayEnd })
-      );
-
-      data.push({
-        date: format(date, 'dd MMM', { locale: es }),
-        total: daySales.reduce((sum, sale) => sum + sale.total, 0),
-        count: daySales.length
-      });
-    }
-
-    return data;
-  }, [filteredSales, dateRange]);
-
-  // Productos más vendidos
-  const topProducts = useMemo(() => {
-    const productSales: Record<string, { name: string; quantity: number; revenue: number }> = {};
-
-    filteredSales.forEach(sale => {
-      sale.items.forEach(item => {
-        const key = item.productName;
-        if (!productSales[key]) {
-          productSales[key] = {
-            name: item.productName,
-            quantity: 0,
-            revenue: 0
-          };
+        switch (period) {
+            case 'week':
+                startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                prevEndDate = new Date(startDate.getTime() - 1);
+                prevStartDate = new Date(prevEndDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+                break;
+            case 'year':
+                startDate = new Date(now.getFullYear(), 0, 1);
+                prevStartDate = new Date(now.getFullYear() - 1, 0, 1);
+                prevEndDate = new Date(now.getFullYear() - 1, 11, 31);
+                break;
+            default: // month
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                prevStartDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                prevEndDate = new Date(now.getFullYear(), now.getMonth(), 0);
         }
-        productSales[key].quantity += item.quantity;
-        productSales[key].revenue += item.unitPrice * item.quantity;
-      });
-    });
 
-    return Object.values(productSales)
-      .sort((a, b) => b.quantity - a.quantity)
-      .slice(0, 10);
-  }, [filteredSales]);
+        const currentSales = sales.filter(
+            s => new Date(s.createdAt) >= startDate && s.status === 'completada'
+        );
+        const prevSales = sales.filter(
+            s => new Date(s.createdAt) >= prevStartDate && new Date(s.createdAt) <= prevEndDate && s.status === 'completada'
+        );
 
-  // Ventas por método de pago
-  const paymentMethods = useMemo(() => {
-    const methods: Record<string, number> = {};
-    
-    filteredSales.forEach(sale => {
-      const method = sale.paymentMethod;
-      methods[method] = (methods[method] || 0) + sale.total;
-    });
+        const totalSales = currentSales.reduce((sum, s) => sum + s.total, 0);
+        const prevTotalSales = prevSales.reduce((sum, s) => sum + s.total, 0);
+        const salesChange = prevTotalSales > 0 ? ((totalSales - prevTotalSales) / prevTotalSales) * 100 : 0;
 
-    const labels: Record<string, string> = {
-      efectivo: 'Efectivo',
-      tarjeta: 'Tarjeta',
-      transferencia: 'Transferencia'
-    };
+        const totalTickets = currentSales.length;
+        const prevTotalTickets = prevSales.length;
+        const ticketsChange = prevTotalTickets > 0 ? ((totalTickets - prevTotalTickets) / prevTotalTickets) * 100 : 0;
 
-    return Object.entries(methods).map(([key, value]) => ({
-      name: labels[key] || key,
-      value
-    }));
-  }, [filteredSales]);
+        const totalUnits = currentSales.reduce(
+            (sum, s) => sum + s.items.reduce((iSum, item) => iSum + item.quantity, 0),
+            0
+        );
+        const prevTotalUnits = prevSales.reduce(
+            (sum, s) => sum + s.items.reduce((iSum, item) => iSum + item.quantity, 0),
+            0
+        );
+        const unitsChange = prevTotalUnits > 0 ? ((totalUnits - prevTotalUnits) / prevTotalUnits) * 100 : 0;
 
-  // Categorías más vendidas (usando nombre del producto como referencia)
-  const topCategories = useMemo(() => {
-    const categories: Record<string, { name: string; revenue: number }> = {};
+        // Margen bruto estimado
+        const totalCost = currentSales.reduce((sum, sale) => {
+            return sum + sale.items.reduce((itemSum, item) => {
+                const product = products.find(p => p.variants.some(v => v.id === item.variantId));
+                return itemSum + (product?.cost || 0) * item.quantity;
+            }, 0);
+        }, 0);
+        const grossMargin = totalSales - totalCost;
+        const marginPercent = totalSales > 0 ? (grossMargin / totalSales) * 100 : 0;
 
-    filteredSales.forEach(sale => {
-      sale.items.forEach(item => {
-        // Usar primera palabra del nombre como categoría aproximada
-        const cat = item.productName.split(' ')[0] || 'Otros';
-        if (!categories[cat]) {
-          categories[cat] = { name: cat, revenue: 0 };
+        return {
+            totalSales,
+            salesChange,
+            totalTickets,
+            ticketsChange,
+            totalUnits,
+            unitsChange,
+            grossMargin,
+            marginPercent,
+            avgTicket: totalTickets > 0 ? totalSales / totalTickets : 0,
+        };
+    }, [sales, products, period]);
+
+    // Top productos vendidos
+    const topProducts = useMemo(() => {
+        const now = new Date();
+        let startDate: Date;
+
+        switch (period) {
+            case 'week':
+                startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                break;
+            case 'year':
+                startDate = new Date(now.getFullYear(), 0, 1);
+                break;
+            default:
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
         }
-        categories[cat].revenue += item.unitPrice * item.quantity;
-      });
-    });
 
-    return Object.values(categories)
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 5);
-  }, [filteredSales]);
+        const productSales: Record<string, { name: string; units: number; revenue: number }> = {};
 
-  const handleExportCSV = () => {
-    const headers = ['Fecha', 'Folio', 'Cliente', 'Método de Pago', 'Subtotal', 'Impuesto', 'Total'];
-    const rows = filteredSales.map(sale => [
-      format(new Date(sale.createdAt), 'dd/MM/yyyy HH:mm'),
-      sale.id,
-      sale.customerName || 'Público general',
-      sale.paymentMethod,
-      sale.subtotal.toFixed(2),
-      sale.tax.toFixed(2),
-      sale.total.toFixed(2)
-    ]);
+        sales
+            .filter(s => new Date(s.createdAt) >= startDate && s.status === 'completada')
+            .forEach(sale => {
+                sale.items.forEach(item => {
+                    const key = item.productName;
+                    if (!productSales[key]) {
+                        productSales[key] = { name: key, units: 0, revenue: 0 };
+                    }
+                    productSales[key].units += item.quantity;
+                    productSales[key].revenue += item.lineTotal;
+                });
+            });
 
-    const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `reporte-ventas-${format(new Date(), 'yyyy-MM-dd')}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+        return Object.values(productSales)
+            .sort((a, b) => b.revenue - a.revenue)
+            .slice(0, 10);
+    }, [sales, period]);
 
-  return (
-    <AppLayout>
-      <div className="space-y-6 animate-fade-in">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <BarChart3 className="w-7 h-7" />
-              Reportes y Estadísticas
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Análisis de ventas y rendimiento del negocio
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Select value={dateRange} onValueChange={setDateRange}>
-              <SelectTrigger className="w-[180px]">
-                <Calendar className="w-4 h-4 mr-2" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="7">Últimos 7 días</SelectItem>
-                <SelectItem value="14">Últimos 14 días</SelectItem>
-                <SelectItem value="30">Últimos 30 días</SelectItem>
-                <SelectItem value="90">Últimos 90 días</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button variant="outline" onClick={handleExportCSV}>
-              <Download className="w-4 h-4 mr-2" />
-              Exportar CSV
-            </Button>
-          </div>
-        </div>
+    // Datos para gráfico de ventas por día
+    const salesByDay = useMemo(() => {
+        const now = new Date();
+        const days: { date: string; ventas: number; tickets: number }[] = [];
+        const daysCount = period === 'week' ? 7 : period === 'month' ? 30 : 12;
 
-        {/* KPIs */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
+        for (let i = daysCount - 1; i >= 0; i--) {
+            const date = new Date(now);
+            if (period === 'year') {
+                date.setMonth(date.getMonth() - i);
+                const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
+                const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+
+                const monthSales = sales.filter(
+                    s => new Date(s.createdAt) >= monthStart && new Date(s.createdAt) <= monthEnd && s.status === 'completada'
+                );
+
+                days.push({
+                    date: date.toLocaleDateString('es-MX', { month: 'short' }),
+                    ventas: monthSales.reduce((sum, s) => sum + s.total, 0),
+                    tickets: monthSales.length,
+                });
+            } else {
+                date.setDate(date.getDate() - i);
+                const dayStart = new Date(date.setHours(0, 0, 0, 0));
+                const dayEnd = new Date(date.setHours(23, 59, 59, 999));
+
+                const daySales = sales.filter(
+                    s => new Date(s.createdAt) >= dayStart && new Date(s.createdAt) <= dayEnd && s.status === 'completada'
+                );
+
+                days.push({
+                    date: date.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' }),
+                    ventas: daySales.reduce((sum, s) => sum + s.total, 0),
+                    tickets: daySales.length,
+                });
+            }
+        }
+
+        return days;
+    }, [sales, period]);
+
+    // Stock valorizado
+    const stockValue = useMemo(() => {
+        let costValue = 0;
+        let priceValue = 0;
+        let totalUnits = 0;
+
+        products.forEach(product => {
+            product.variants.forEach(variant => {
+                totalUnits += variant.stock;
+                costValue += variant.stock * product.cost;
+                priceValue += variant.stock * (variant.priceOverride ?? product.price);
+            });
+        });
+
+        return { costValue, priceValue, totalUnits, potentialMargin: priceValue - costValue };
+    }, [products]);
+
+    // Ventas por categoría
+    const salesByCategory = useMemo(() => {
+        const now = new Date();
+        const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        const categories: Record<string, number> = {};
+
+        sales
+            .filter(s => new Date(s.createdAt) >= startDate && s.status === 'completada')
+            .forEach(sale => {
+                sale.items.forEach(item => {
+                    const product = products.find(p =>
+                        p.variants.some(v => v.id === item.variantId)
+                    );
+                    const category = product?.categoryId || 'Sin categoría';
+                    categories[category] = (categories[category] || 0) + item.lineTotal;
+                });
+            });
+
+        return Object.entries(categories).map(([name, value], index) => ({
+            name,
+            value,
+            color: CHART_COLORS[index % CHART_COLORS.length],
+        }));
+    }, [sales, products]);
+
+    const MetricCard = ({
+        title,
+        value,
+        change,
+        icon: Icon,
+        format = 'currency'
+    }: {
+        title: string;
+        value: number;
+        change?: number;
+        icon: typeof DollarSign;
+        format?: 'currency' | 'number' | 'percent';
+    }) => (
+        <Card>
             <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Ventas Totales</p>
-                  <p className="text-2xl font-bold">{formatCurrency(stats.totalSales)}</p>
-                </div>
-                <div className={`p-3 rounded-full ${stats.salesGrowth >= 0 ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
-                  <DollarSign className={`w-5 h-5 ${stats.salesGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`} />
-                </div>
-              </div>
-              <div className={`flex items-center gap-1 mt-2 text-sm ${stats.salesGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {stats.salesGrowth >= 0 ? (
-                  <ArrowUpRight className="w-4 h-4" />
-                ) : (
-                  <ArrowDownRight className="w-4 h-4" />
-                )}
-                <span>{Math.abs(stats.salesGrowth).toFixed(1)}%</span>
-                <span className="text-muted-foreground">vs período anterior</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Transacciones</p>
-                  <p className="text-2xl font-bold">{stats.salesCount}</p>
-                </div>
-                <div className="p-3 rounded-full bg-primary/10">
-                  <ShoppingCart className="w-5 h-5 text-primary" />
-                </div>
-              </div>
-              <p className="text-sm text-muted-foreground mt-2">
-                Ventas completadas
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Ticket Promedio</p>
-                  <p className="text-2xl font-bold">{formatCurrency(stats.avgTicket)}</p>
-                </div>
-                <div className="p-3 rounded-full bg-accent/10">
-                  <FileText className="w-5 h-5 text-accent-foreground" />
-                </div>
-              </div>
-              <p className="text-sm text-muted-foreground mt-2">
-                Por transacción
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Unidades Vendidas</p>
-                  <p className="text-2xl font-bold">{stats.totalItems}</p>
-                </div>
-                <div className="p-3 rounded-full bg-secondary">
-                  <Package className="w-5 h-5 text-secondary-foreground" />
-                </div>
-              </div>
-              <p className="text-sm text-muted-foreground mt-2">
-                Productos vendidos
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Tabs defaultValue="ventas" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="ventas" className="gap-2">
-              <TrendingUp className="w-4 h-4" />
-              Ventas
-            </TabsTrigger>
-            <TabsTrigger value="productos" className="gap-2">
-              <Package className="w-4 h-4" />
-              Productos
-            </TabsTrigger>
-            <TabsTrigger value="pagos" className="gap-2">
-              <DollarSign className="w-4 h-4" />
-              Métodos de Pago
-            </TabsTrigger>
-          </TabsList>
-
-          {/* Ventas Tab */}
-          <TabsContent value="ventas" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Ventas por Día</CardTitle>
-                <CardDescription>Evolución de ventas en el período seleccionado</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[350px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={dailySales}>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                      <XAxis dataKey="date" className="text-xs" />
-                      <YAxis tickFormatter={(value) => `$${value.toLocaleString()}`} className="text-xs" />
-                      <Tooltip 
-                        formatter={(value: number) => formatCurrency(value)}
-                        contentStyle={{ 
-                          backgroundColor: 'hsl(var(--card))', 
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px'
-                        }}
-                      />
-                      <Bar dataKey="total" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Transacciones por Día</CardTitle>
-                <CardDescription>Número de ventas completadas</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[250px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={dailySales}>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                      <XAxis dataKey="date" className="text-xs" />
-                      <YAxis className="text-xs" />
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: 'hsl(var(--card))', 
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px'
-                        }}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="count" 
-                        stroke="hsl(var(--primary))" 
-                        strokeWidth={2}
-                        dot={{ fill: 'hsl(var(--primary))' }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Productos Tab */}
-          <TabsContent value="productos" className="space-y-4">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Productos Más Vendidos</CardTitle>
-                  <CardDescription>Top 10 por unidades vendidas</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {topProducts.length > 0 ? (
-                    <div className="space-y-3">
-                      {topProducts.map((product, index) => (
-                        <div key={product.name} className="flex items-center gap-3">
-                          <Badge variant={index < 3 ? 'default' : 'secondary'} className="w-6 h-6 p-0 flex items-center justify-center text-xs">
-                            {index + 1}
-                          </Badge>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium truncate">{product.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {product.quantity} unidades
-                            </p>
-                          </div>
-                          <p className="font-semibold">{formatCurrency(product.revenue)}</p>
-                        </div>
-                      ))}
+                <div className="flex items-center justify-between">
+                    <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                        <Icon className="w-6 h-6 text-primary" />
                     </div>
-                  ) : (
-                    <p className="text-center text-muted-foreground py-8">
-                      No hay datos de ventas en este período
+                    {change !== undefined && (
+                        <Badge
+                            variant={change >= 0 ? 'default' : 'destructive'}
+                            className="gap-1"
+                        >
+                            {change >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                            {Math.abs(change).toFixed(1)}%
+                        </Badge>
+                    )}
+                </div>
+                <div className="mt-4">
+                    <p className="text-sm text-muted-foreground">{title}</p>
+                    <p className="text-2xl font-bold mt-1">
+                        {format === 'currency' ? formatCurrency(value) :
+                            format === 'percent' ? `${value.toFixed(1)}%` :
+                                value.toLocaleString()}
                     </p>
-                  )}
-                </CardContent>
-              </Card>
+                </div>
+            </CardContent>
+        </Card>
+    );
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Ventas por Categoría</CardTitle>
-                  <CardDescription>Distribución de ingresos</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {topCategories.length > 0 ? (
-                    <div className="space-y-3">
-                      {topCategories.map((cat, index) => {
-                        const total = topCategories.reduce((sum, c) => sum + c.revenue, 0);
-                        const percentage = total > 0 ? (cat.revenue / total) * 100 : 0;
-                        
-                        return (
-                          <div key={cat.name} className="space-y-1">
-                            <div className="flex items-center justify-between">
-                              <span className="font-medium">{cat.name}</span>
-                              <span className="text-sm text-muted-foreground">
-                                {percentage.toFixed(1)}%
-                              </span>
-                            </div>
-                            <div className="h-2 rounded-full bg-muted overflow-hidden">
-                              <div 
-                                className="h-full rounded-full transition-all" 
-                                style={{ 
-                                  width: `${percentage}%`,
-                                  backgroundColor: COLORS[index % COLORS.length]
-                                }}
-                              />
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              {formatCurrency(cat.revenue)}
-                            </p>
-                          </div>
-                        );
-                      })}
+    return (
+        <AppLayout>
+            <div className="space-y-6 animate-fade-in">
+                {/* Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <h1 className="text-2xl font-bold flex items-center gap-2">
+                            <BarChart3 className="w-7 h-7" />
+                            Reportes y Métricas
+                        </h1>
+                        <p className="text-muted-foreground mt-1">
+                            Análisis de ventas, inventario y rendimiento
+                        </p>
                     </div>
-                  ) : (
-                    <p className="text-center text-muted-foreground py-8">
-                      No hay datos en este período
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
+                    <div className="flex items-center gap-2">
+                        <Select value={period} onValueChange={(v) => setPeriod(v as typeof period)}>
+                            <SelectTrigger className="w-40">
+                                <Calendar className="w-4 h-4 mr-2" />
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="week">Última semana</SelectItem>
+                                <SelectItem value="month">Este mes</SelectItem>
+                                <SelectItem value="year">Este año</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Button variant="outline">
+                            <Download className="w-4 h-4 mr-2" />
+                            Exportar
+                        </Button>
+                    </div>
+                </div>
+
+                {/* KPIs */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <MetricCard
+                        title="Ventas Totales"
+                        value={metrics.totalSales}
+                        change={metrics.salesChange}
+                        icon={DollarSign}
+                    />
+                    <MetricCard
+                        title="Tickets"
+                        value={metrics.totalTickets}
+                        change={metrics.ticketsChange}
+                        icon={FileText}
+                        format="number"
+                    />
+                    <MetricCard
+                        title="Unidades Vendidas"
+                        value={metrics.totalUnits}
+                        change={metrics.unitsChange}
+                        icon={ShoppingBag}
+                        format="number"
+                    />
+                    <MetricCard
+                        title="Ticket Promedio"
+                        value={metrics.avgTicket}
+                        icon={TrendingUp}
+                    />
+                </div>
+
+                {/* Gráficos principales */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Gráfico de ventas */}
+                    <Card className="lg:col-span-2">
+                        <CardHeader>
+                            <CardTitle className="text-lg">Ventas por {period === 'year' ? 'Mes' : 'Día'}</CardTitle>
+                            <CardDescription>Evolución de ventas en el período seleccionado</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="h-[300px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={salesByDay}>
+                                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                                        <XAxis dataKey="date" className="text-xs" />
+                                        <YAxis className="text-xs" tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                                        <Tooltip
+                                            formatter={(value: number) => [formatCurrency(value), 'Ventas']}
+                                            contentStyle={{
+                                                backgroundColor: 'hsl(var(--card))',
+                                                border: '1px solid hsl(var(--border))'
+                                            }}
+                                        />
+                                        <Area
+                                            type="monotone"
+                                            dataKey="ventas"
+                                            stroke="hsl(var(--primary))"
+                                            fill="hsl(var(--primary) / 0.2)"
+                                            strokeWidth={2}
+                                        />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Margen y Stock */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-lg">Resumen Financiero</CardTitle>
+                            <CardDescription>Margen bruto y valorización</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="p-4 rounded-lg bg-success/10 border border-success/20">
+                                <p className="text-sm text-success font-medium">Margen Bruto</p>
+                                <p className="text-2xl font-bold text-success">{formatCurrency(metrics.grossMargin)}</p>
+                                <p className="text-xs text-muted-foreground mt-1">{metrics.marginPercent.toFixed(1)}% del total</p>
+                            </div>
+
+                            <Separator />
+
+                            <div>
+                                <p className="text-sm text-muted-foreground mb-2">Stock Valorizado</p>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between">
+                                        <span className="text-sm">Valor a costo</span>
+                                        <span className="font-medium">{formatCurrency(stockValue.costValue)}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-sm">Valor a precio</span>
+                                        <span className="font-medium">{formatCurrency(stockValue.priceValue)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-success">
+                                        <span className="text-sm">Margen potencial</span>
+                                        <span className="font-medium">{formatCurrency(stockValue.potentialMargin)}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <Separator />
+
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                                    <Package className="w-5 h-5 text-primary" />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-muted-foreground">Unidades en Stock</p>
+                                    <p className="text-xl font-bold">{stockValue.totalUnits.toLocaleString()}</p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+
+                {/* Top productos y categorías */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Top vendidos */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-lg">Top 10 Productos</CardTitle>
+                            <CardDescription>Por ingresos en el período</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            {topProducts.length > 0 ? (
+                                <div className="space-y-3">
+                                    {topProducts.map((product, index) => (
+                                        <div key={product.name} className="flex items-center gap-3">
+                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${index < 3 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                                                }`}>
+                                                {index + 1}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium truncate">{product.name}</p>
+                                                <p className="text-xs text-muted-foreground">{product.units} unidades</p>
+                                            </div>
+                                            <p className="font-medium">{formatCurrency(product.revenue)}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="text-center py-8 text-muted-foreground">
+                                    <ShoppingBag className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                                    <p>No hay ventas en este período</p>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    {/* Ventas por categoría */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-lg">Ventas por Categoría</CardTitle>
+                            <CardDescription>Distribución del mes actual</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            {salesByCategory.length > 0 ? (
+                                <div className="h-[300px]">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={salesByCategory.slice(0, 5)} layout="vertical">
+                                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                                            <XAxis type="number" tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                                            <YAxis type="category" dataKey="name" width={100} className="text-xs" />
+                                            <Tooltip
+                                                formatter={(value: number) => [formatCurrency(value), 'Ventas']}
+                                                contentStyle={{
+                                                    backgroundColor: 'hsl(var(--card))',
+                                                    border: '1px solid hsl(var(--border))'
+                                                }}
+                                            />
+                                            <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                                                {salesByCategory.slice(0, 5).map((entry, index) => (
+                                                    <Cell key={index} fill={entry.color} />
+                                                ))}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            ) : (
+                                <div className="text-center py-8 text-muted-foreground">
+                                    <BarChart3 className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                                    <p>No hay datos de categorías</p>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </div>
             </div>
-          </TabsContent>
-
-          {/* Pagos Tab */}
-          <TabsContent value="pagos" className="space-y-4">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Distribución por Método de Pago</CardTitle>
-                  <CardDescription>Ingresos por tipo de pago</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {paymentMethods.length > 0 ? (
-                    <div className="h-[300px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={paymentMethods}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={60}
-                            outerRadius={100}
-                            paddingAngle={5}
-                            dataKey="value"
-                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                          >
-                            {paymentMethods.map((_, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
-                          </Pie>
-                          <Tooltip 
-                            formatter={(value: number) => formatCurrency(value)}
-                            contentStyle={{ 
-                              backgroundColor: 'hsl(var(--card))', 
-                              border: '1px solid hsl(var(--border))',
-                              borderRadius: '8px'
-                            }}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                  ) : (
-                    <p className="text-center text-muted-foreground py-8">
-                      No hay datos en este período
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Detalle por Método</CardTitle>
-                  <CardDescription>Resumen de ingresos</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {paymentMethods.length > 0 ? (
-                    <div className="space-y-4">
-                      {paymentMethods.map((method, index) => {
-                        const total = paymentMethods.reduce((sum, m) => sum + m.value, 0);
-                        const percentage = total > 0 ? (method.value / total) * 100 : 0;
-                        
-                        return (
-                          <div key={method.name} className="flex items-center gap-4 p-4 rounded-lg bg-muted/50">
-                            <div 
-                              className="w-4 h-4 rounded-full" 
-                              style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                            />
-                            <div className="flex-1">
-                              <p className="font-medium">{method.name}</p>
-                              <p className="text-sm text-muted-foreground">
-                                {percentage.toFixed(1)}% del total
-                              </p>
-                            </div>
-                            <p className="text-xl font-bold">{formatCurrency(method.value)}</p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-center text-muted-foreground py-8">
-                      No hay datos en este período
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-        </Tabs>
-      </div>
-    </AppLayout>
-  );
+        </AppLayout>
+    );
 }
