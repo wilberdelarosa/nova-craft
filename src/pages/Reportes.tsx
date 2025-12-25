@@ -64,10 +64,13 @@ export default function Reportes() {
     
     const { sales, products, categories, storeConfig, fetchExchangeRate } = useStore();
 
+    // Tasa de cambio con valor por defecto
+    const exchangeRate = storeConfig?.exchangeRate?.USD_DOP ?? 60;
+
     // Función de formato según moneda
     const formatCurrency = (amount: number) => {
         if (currency === 'USD') {
-            return formatUSD(amount / storeConfig.exchangeRate.USD_DOP);
+            return formatUSD(amount / exchangeRate);
         }
         return formatDOP(amount);
     };
@@ -485,12 +488,14 @@ export default function Reportes() {
                                 <div className="flex items-center gap-2">
                                     <DollarSign className="w-4 h-4 text-muted-foreground" />
                                     <span className="text-sm">
-                                        Tasa de cambio: <strong>1 USD = {formatDOP(storeConfig.exchangeRate.USD_DOP)}</strong>
+                                        Tasa de cambio: <strong>1 USD = {formatDOP(exchangeRate)}</strong>
                                     </span>
                                 </div>
                                 <span className="text-xs text-muted-foreground">
-                                    Fuente: {storeConfig.exchangeRate.source} • 
-                                    {format(new Date(storeConfig.exchangeRate.lastUpdated), " dd/MM/yyyy HH:mm")}
+                                    Fuente: {storeConfig?.exchangeRate?.source ?? 'N/A'} • 
+                                    {storeConfig?.exchangeRate?.lastUpdated 
+                                      ? format(new Date(storeConfig.exchangeRate.lastUpdated), " dd/MM/yyyy HH:mm")
+                                      : ' --'}
                                 </span>
                             </div>
                         </CardContent>
