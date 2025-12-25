@@ -1,12 +1,12 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
-import { 
-  Search, 
-  Plus, 
-  Minus, 
-  Trash2, 
-  ShoppingCart, 
-  CreditCard, 
-  Banknote, 
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import {
+  Search,
+  Plus,
+  Minus,
+  Trash2,
+  ShoppingCart,
+  CreditCard,
+  Banknote,
   Building2,
   User,
   Phone,
@@ -56,11 +56,14 @@ function formatCurrency(amount: number) {
 export default function Ventas() {
   const searchRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [lastReadCode, setLastReadCode] = useState<string | null>(null);
+  const lastReadTimerRef = useRef<number | null>(null);
+  const searchQueryRef = useRef('');
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [lastSale, setLastSale] = useState<Sale | null>(null);
-  
+
   // Payment form
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('efectivo');
   const [amountReceived, setAmountReceived] = useState('');
@@ -68,13 +71,13 @@ export default function Ventas() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [globalDiscount, setGlobalDiscount] = useState('');
 
-  const { 
-    cart, 
+  const {
+    cart,
     products,
-    addToCart, 
-    updateCartItem, 
-    removeFromCart, 
-    clearCart, 
+    addToCart,
+    updateCartItem,
+    removeFromCart,
+    clearCart,
     completeSale,
     getVariantByBarcode,
     storeConfig
@@ -85,12 +88,33 @@ export default function Ventas() {
     searchRef.current?.focus();
   }, []);
 
-  // Search results
+  useEffect(() => {
+    searchQueryRef.current = searchQuery;
+  }, [searchQuery]);
+
+  // Keep focus reasonably stable for HID scanning
+  useEffect(() => {
+    if (showPaymentDialog || showScanner || showSuccessDialog) return;
+    searchRef.current?.focus();
+  }, [showPaymentDialog, showScanner, showSuccessDialog]);
+
+  const markLastRead = useCallback((code: string) => {
+    setLastReadCode(code);
+    if (lastReadTimerRef.current) {
+      window.clearTimeout(lastReadTimerRef.current);
+    }
+    lastReadTimerRef.current = window.setTimeout(() => {
+      setLastReadCode(null);
+      lastReadTimerRef.current = null;
+    }, 2500);
+  }, []);
+
+  // Search results - MUST be defined before processScanOrSearch
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const q = searchQuery.toLowerCase();
     const results: { variant: typeof products[0]['variants'][0]; product: typeof products[0] }[] = [];
-    
+
     for (const product of products) {
       for (const variant of product.variants) {
         if (
@@ -108,6 +132,45 @@ export default function Ventas() {
     return results;
   }, [searchQuery, products]);
 
+  const processScanOrSearch = useCallback((raw: string) => {
+    const value = raw.trim();
+    if (!value) return;
+
+    markLastRead(value);
+
+    const result = getVariantByBarcode(value);
+    if (result) {
+      if (result.variant.stock <= 0) {
+        toast.error('Producto agotado', {
+          description: `${result.product.name} no tiene stock disponible`,
+        });
+      } else {
+        addToCart(result.variant, result.product);
+        toast.success('Agregado al carrito', {
+          description: `${result.product.name} - ${result.variant.size || ''} ${result.variant.color || ''}`,
+        });
+      }
+      setSearchQuery('');
+      return;
+    }
+
+    if (searchResults.length === 1) {
+      const { variant, product } = searchResults[0];
+      if (variant.stock <= 0) {
+        toast.error('Producto agotado');
+      } else {
+        addToCart(variant, product);
+        toast.success('Agregado al carrito');
+      }
+      setSearchQuery('');
+      return;
+    }
+
+    if (searchResults.length === 0) {
+      toast.error('Producto no encontrado', { description: value });
+    }
+  }, [addToCart, getVariantByBarcode, markLastRead, searchResults]);
+
   // Cart calculations
   const cartTotals = useMemo(() => {
     const subtotal = cart.reduce(
@@ -120,68 +183,31 @@ export default function Ventas() {
     return { subtotal, tax, discountAmount, total };
   }, [cart, globalDiscount, storeConfig.defaultTaxRate]);
 
-  // Handle barcode scan (Enter key)
+  // Handle barcode scan (Enter/Tab suffix)
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && searchQuery.trim()) {
+    if ((e.key === 'Enter' || e.key === 'Tab') && searchQuery.trim()) {
       e.preventDefault();
-      const result = getVariantByBarcode(searchQuery.trim());
-      if (result) {
-        if (result.variant.stock <= 0) {
-          toast.error('Producto agotado', {
-            description: `${result.product.name} no tiene stock disponible`,
-          });
-        } else {
-          addToCart(result.variant, result.product);
-          toast.success('Agregado al carrito', {
-            description: `${result.product.name} - ${result.variant.size || ''} ${result.variant.color || ''}`,
-          });
-        }
-        setSearchQuery('');
-      } else if (searchResults.length === 1) {
-        const { variant, product } = searchResults[0];
-        if (variant.stock <= 0) {
-          toast.error('Producto agotado');
-        } else {
-          addToCart(variant, product);
-          toast.success('Agregado al carrito');
-        }
-        setSearchQuery('');
-      } else if (searchResults.length === 0) {
-        toast.error('Producto no encontrado');
-      }
+      processScanOrSearch(searchQuery);
     }
   };
 
   // Handle scanned barcode from camera
   const handleBarcodeScanned = (code: string) => {
-    const result = getVariantByBarcode(code);
-    if (result) {
-      if (result.variant.stock <= 0) {
-        toast.error('Producto agotado', {
-          description: `${result.product.name} no tiene stock disponible`,
-        });
-      } else {
-        addToCart(result.variant, result.product);
-        toast.success('Agregado al carrito', {
-          description: `${result.product.name} - ${result.variant.size || ''} ${result.variant.color || ''}`,
-        });
-      }
-    } else {
-      toast.error('Producto no encontrado', { description: code });
-    }
+    processScanOrSearch(code);
+    window.setTimeout(() => searchRef.current?.focus(), 0);
   };
 
   const handleAddToCart = (variant: typeof products[0]['variants'][0], product: typeof products[0]) => {
     const cartItem = cart.find((item) => item.variant.id === variant.id);
     const currentQty = cartItem?.quantity || 0;
-    
+
     if (currentQty >= variant.stock) {
       toast.error('Stock insuficiente', {
         description: `Solo hay ${variant.stock} unidades disponibles`,
       });
       return;
     }
-    
+
     addToCart(variant, product);
     toast.success('Agregado', { description: `${product.name}` });
     setSearchQuery('');
@@ -205,18 +231,67 @@ export default function Ventas() {
     updateCartItem(variantId, newQty);
   };
 
-  const handleOpenPayment = () => {
+  const handleOpenPayment = useCallback(() => {
     if (cart.length === 0) {
       toast.error('Carrito vacío', { description: 'Agrega productos para continuar' });
       return;
     }
     setAmountReceived(cartTotals.total.toFixed(2));
     setShowPaymentDialog(true);
-  };
+  }, [cart.length, cartTotals.total]);
+
+  // Global key handling: allow F9 to charge, and tolerate scan when focus is lost
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (showPaymentDialog || showScanner || showSuccessDialog) return;
+
+      if (e.key === 'F9') {
+        e.preventDefault();
+        handleOpenPayment();
+        return;
+      }
+
+      // Don't interfere with normal typing in other inputs
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || !!target?.isContentEditable) return;
+
+      // Basic scan buffering when focus is lost (keyboard wedge)
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      const currentQuery = searchQueryRef.current;
+
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        if (currentQuery.trim()) {
+          e.preventDefault();
+          processScanOrSearch(currentQuery);
+        }
+        return;
+      }
+
+      if (e.key === 'Backspace') {
+        if (currentQuery) {
+          e.preventDefault();
+          setSearchQuery((prev) => prev.slice(0, -1));
+        }
+        searchRef.current?.focus();
+        return;
+      }
+
+      if (e.key.length === 1) {
+        e.preventDefault();
+        setSearchQuery((prev) => prev + e.key);
+        searchRef.current?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleOpenPayment, processScanOrSearch, showPaymentDialog, showScanner, showSuccessDialog]);
 
   const handleCompleteSale = () => {
     const received = parseFloat(amountReceived) || 0;
-    
+
     if (paymentMethod === 'efectivo' && received < cartTotals.total) {
       toast.error('Monto insuficiente');
       return;
@@ -234,7 +309,7 @@ export default function Ventas() {
       setLastSale(sale);
       setShowPaymentDialog(false);
       setShowSuccessDialog(true);
-      
+
       // Reset form
       setPaymentMethod('efectivo');
       setAmountReceived('');
@@ -250,7 +325,7 @@ export default function Ventas() {
     searchRef.current?.focus();
   };
 
-  const change = paymentMethod === 'efectivo' 
+  const change = paymentMethod === 'efectivo'
     ? Math.max(0, (parseFloat(amountReceived) || 0) - cartTotals.total)
     : 0;
 
@@ -308,6 +383,14 @@ export default function Ventas() {
                 </Button>
               </div>
 
+              {lastReadCode && (
+                <div className="-mt-2 mb-3">
+                  <Badge variant="secondary" className="font-mono">
+                    Leído: {lastReadCode}
+                  </Badge>
+                </div>
+              )}
+
               {/* Search Results */}
               {searchQuery && (
                 <div className="flex-1 overflow-auto border border-border rounded-lg">
@@ -324,8 +407,8 @@ export default function Ventas() {
                           )}
                         >
                           {product.images[0] ? (
-                            <img 
-                              src={product.images[0].url} 
+                            <img
+                              src={product.images[0].url}
                               alt={product.name}
                               className="w-12 h-12 object-cover rounded-md"
                             />
@@ -347,7 +430,7 @@ export default function Ventas() {
                           </div>
                           <div className="text-right">
                             <p className="font-semibold">{formatCurrency(variant.priceOverride ?? product.price)}</p>
-                            <Badge 
+                            <Badge
                               variant={variant.stock > 0 ? 'secondary' : 'destructive'}
                               className="text-xs"
                             >
@@ -396,7 +479,7 @@ export default function Ventas() {
                 )}
               </div>
             </CardHeader>
-            
+
             <CardContent className="flex-1 overflow-auto p-0">
               {cart.length > 0 ? (
                 <div className="divide-y divide-border">
@@ -411,7 +494,7 @@ export default function Ventas() {
                           {formatCurrency(item.unitPrice)} × {item.quantity}
                         </p>
                       </div>
-                      
+
                       <div className="flex items-center gap-1">
                         <Button
                           variant="outline"
@@ -519,8 +602,8 @@ export default function Ventas() {
                 </div>
               </div>
 
-              <Button 
-                onClick={handleOpenPayment} 
+              <Button
+                onClick={handleOpenPayment}
                 className="w-full h-12 text-base"
                 disabled={cart.length === 0}
               >
@@ -538,7 +621,7 @@ export default function Ventas() {
           <DialogHeader>
             <DialogTitle>Cobrar venta</DialogTitle>
           </DialogHeader>
-          
+
           <div className="space-y-4 py-4">
             <div className="text-center p-4 bg-muted rounded-lg">
               <p className="text-sm text-muted-foreground">Total a cobrar</p>
@@ -628,16 +711,24 @@ export default function Ventas() {
             </div>
           </div>
           <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               className="flex-1"
-              onClick={() => lastSale && printTicket(lastSale, storeConfig)}
+              onClick={() => {
+                if (!lastSale) return;
+                const ok = printTicket(lastSale, storeConfig);
+                if (!ok) {
+                  toast.error('No se pudo abrir la ventana de impresión', {
+                    description: 'Permite ventanas emergentes o usa "Descargar PDF"',
+                  });
+                }
+              }}
             >
               <Printer className="w-4 h-4 mr-2" />
               Imprimir
             </Button>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               className="flex-1"
               onClick={() => lastSale && downloadTicket(lastSale, storeConfig)}
             >
@@ -654,7 +745,10 @@ export default function Ventas() {
       {/* Barcode Scanner */}
       <BarcodeScanner
         open={showScanner}
-        onClose={() => setShowScanner(false)}
+        onClose={() => {
+          setShowScanner(false);
+          window.setTimeout(() => searchRef.current?.focus(), 0);
+        }}
         onScan={handleBarcodeScanned}
       />
     </AppLayout>

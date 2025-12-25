@@ -474,8 +474,9 @@ export const useStore = create<StoreState>()(
           (sum, item) => sum + (item.unitPrice * item.quantity - item.discount),
           0
         );
-        const tax = subtotal * (state.storeConfig.defaultTaxRate / 100);
-        const total = subtotal + tax - discount;
+        const taxableBase = Math.max(0, subtotal - discount);
+        const tax = taxableBase * (state.storeConfig.defaultTaxRate / 100);
+        const total = taxableBase + tax;
         const change = amountReceived - total;
 
         const newSaleNumber = `${state.storeConfig.ticketSeriesPrefix}-${new Date().getFullYear()}-${String(state.storeConfig.lastTicketNumber + 1).padStart(4, '0')}`;
@@ -638,6 +639,10 @@ export const useStore = create<StoreState>()(
     {
       name: 'inventory-store',
       partialize: (state) => ({
+        // Auth state - persist user session
+        currentUser: state.currentUser,
+        isAuthenticated: state.isAuthenticated,
+        // Data
         products: state.products,
         categories: state.categories,
         brands: state.brands,
