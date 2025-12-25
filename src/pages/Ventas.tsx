@@ -253,11 +253,11 @@ export default function Ventas() {
     
     // Convertir según moneda seleccionada
     const convertedTotal = saleCurrency === 'USD' 
-      ? total / storeConfig.exchangeRate.USD_DOP 
+      ? total / exchangeRate 
       : total;
     
     return { subtotal, tax, discountAmount, total, convertedTotal };
-  }, [cart, globalDiscount, storeConfig.defaultTaxRate, storeConfig.exchangeRate.USD_DOP, saleCurrency]);
+  }, [cart, globalDiscount, storeConfig.defaultTaxRate, exchangeRate, saleCurrency]);
 
   // Handle barcode scan (Enter/Tab suffix)
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
@@ -751,7 +751,7 @@ export default function Ventas() {
               {saleCurrency === 'USD' && (
                 <div className="text-xs text-center text-muted-foreground flex items-center justify-center gap-1">
                   <RefreshCw className="w-3 h-3" />
-                  Tasa: 1 USD = {formatDOP(storeConfig.exchangeRate.USD_DOP)}
+                  Tasa: 1 USD = {formatDOP(exchangeRate)}
                 </div>
               )}
 
@@ -1053,7 +1053,7 @@ export default function Ventas() {
               <div className="p-3 bg-muted rounded-lg">
                 <p className="text-sm text-muted-foreground">Precio en USD</p>
                 <p className="font-semibold text-lg">
-                  {formatUSD(parseFloat(quickProductPrice) / storeConfig.exchangeRate.USD_DOP)}
+                  {formatUSD(parseFloat(quickProductPrice) / exchangeRate)}
                 </p>
               </div>
             )}
