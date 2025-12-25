@@ -133,6 +133,7 @@ export interface StoreConfig {
   ticketTemplate: 'informal' | 'fiscal';
   ticketSeriesPrefix: string;
   lastTicketNumber: number;
+  ticketFooter?: string;
 }
 
 export interface DashboardStats {
