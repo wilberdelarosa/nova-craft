@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 import {
     BarChart3,
     TrendingUp,
@@ -9,7 +11,10 @@ import {
     ArrowDownRight,
     Calendar,
     FileText,
-    Download
+    Download,
+    RefreshCw,
+    Filter,
+    Printer
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,8 +27,16 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { useStore } from '@/lib/store';
+import { useStore, formatDOP, formatUSD } from '@/lib/store';
+import type { Currency, PaymentMethod } from '@/types/inventory';
+import { cn } from '@/lib/utils';
 import {
     AreaChart,
     Area,
@@ -39,49 +52,78 @@ import {
     Cell
 } from 'recharts';
 
-function formatCurrency(amount: number) {
-    return new Intl.NumberFormat('es-MX', {
-        style: 'currency',
-        currency: 'MXN',
-    }).format(amount);
-}
-
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
 export default function Reportes() {
     const [period, setPeriod] = useState<'week' | 'month' | 'year'>('month');
-    const { sales, products, storeConfig } = useStore();
+    const [currency, setCurrency] = useState<Currency>('DOP');
+    const [paymentFilter, setPaymentFilter] = useState<string>('all');
+    const [showFilters, setShowFilters] = useState(false);
+    const [dateFrom, setDateFrom] = useState<Date | undefined>();
+    const [dateTo, setDateTo] = useState<Date | undefined>();
+    
+    const { sales, products, categories, storeConfig, fetchExchangeRate } = useStore();
 
-    // Métricas del período seleccionado
+    // Función de formato según moneda
+    const formatCurrency = (amount: number) => {
+        if (currency === 'USD') {
+            return formatUSD(amount / storeConfig.exchangeRate.USD_DOP);
+        }
+        return formatDOP(amount);
+    };
+
+    // Métricas del período seleccionado con filtros
     const metrics = useMemo(() => {
         const now = new Date();
         let startDate: Date;
         let prevStartDate: Date;
         let prevEndDate: Date;
 
-        switch (period) {
-            case 'week':
-                startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                prevEndDate = new Date(startDate.getTime() - 1);
-                prevStartDate = new Date(prevEndDate.getTime() - 7 * 24 * 60 * 60 * 1000);
-                break;
-            case 'year':
-                startDate = new Date(now.getFullYear(), 0, 1);
-                prevStartDate = new Date(now.getFullYear() - 1, 0, 1);
-                prevEndDate = new Date(now.getFullYear() - 1, 11, 31);
-                break;
-            default: // month
-                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-                prevStartDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-                prevEndDate = new Date(now.getFullYear(), now.getMonth(), 0);
+        // Usar fechas personalizadas o período predefinido
+        if (dateFrom && dateTo) {
+            startDate = dateFrom;
+            const diffDays = Math.ceil((dateTo.getTime() - dateFrom.getTime()) / (1000 * 60 * 60 * 24));
+            prevEndDate = new Date(dateFrom.getTime() - 1);
+            prevStartDate = new Date(prevEndDate.getTime() - diffDays * 24 * 60 * 60 * 1000);
+        } else {
+            switch (period) {
+                case 'week':
+                    startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    prevEndDate = new Date(startDate.getTime() - 1);
+                    prevStartDate = new Date(prevEndDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    break;
+                case 'year':
+                    startDate = new Date(now.getFullYear(), 0, 1);
+                    prevStartDate = new Date(now.getFullYear() - 1, 0, 1);
+                    prevEndDate = new Date(now.getFullYear() - 1, 11, 31);
+                    break;
+                default: // month
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    prevStartDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                    prevEndDate = new Date(now.getFullYear(), now.getMonth(), 0);
+            }
         }
 
-        const currentSales = sales.filter(
-            s => new Date(s.createdAt) >= startDate && s.status === 'completada'
+        const endDate = dateTo || now;
+
+        // Filtrar ventas
+        let currentSales = sales.filter(
+            s => new Date(s.createdAt) >= startDate && 
+                 new Date(s.createdAt) <= endDate && 
+                 s.status === 'completada'
         );
-        const prevSales = sales.filter(
-            s => new Date(s.createdAt) >= prevStartDate && new Date(s.createdAt) <= prevEndDate && s.status === 'completada'
+        
+        let prevSales = sales.filter(
+            s => new Date(s.createdAt) >= prevStartDate && 
+                 new Date(s.createdAt) <= prevEndDate && 
+                 s.status === 'completada'
         );
+
+        // Aplicar filtro de método de pago
+        if (paymentFilter !== 'all') {
+            currentSales = currentSales.filter(s => s.paymentMethod === paymentFilter);
+            prevSales = prevSales.filter(s => s.paymentMethod === paymentFilter);
+        }
 
         const totalSales = currentSales.reduce((sum, s) => sum + s.total, 0);
         const prevTotalSales = prevSales.reduce((sum, s) => sum + s.total, 0);
@@ -121,8 +163,9 @@ export default function Reportes() {
             grossMargin,
             marginPercent,
             avgTicket: totalTickets > 0 ? totalSales / totalTickets : 0,
+            currentSalesCount: currentSales.length,
         };
-    }, [sales, products, period]);
+    }, [sales, products, period, paymentFilter, dateFrom, dateTo]);
 
     // Top productos vendidos
     const topProducts = useMemo(() => {
@@ -299,7 +342,22 @@ export default function Reportes() {
                             Análisis de ventas, inventario y rendimiento
                         </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                        {/* Selector de moneda */}
+                        <div className="flex gap-1 bg-muted p-1 rounded-lg">
+                            {(['DOP', 'USD'] as Currency[]).map((cur) => (
+                                <Button
+                                    key={cur}
+                                    variant={currency === cur ? 'default' : 'ghost'}
+                                    size="sm"
+                                    onClick={() => setCurrency(cur)}
+                                    className="h-7 px-3"
+                                >
+                                    {cur}
+                                </Button>
+                            ))}
+                        </div>
+
                         <Select value={period} onValueChange={(v) => setPeriod(v as typeof period)}>
                             <SelectTrigger className="w-40">
                                 <Calendar className="w-4 h-4 mr-2" />
@@ -311,12 +369,133 @@ export default function Reportes() {
                                 <SelectItem value="year">Este año</SelectItem>
                             </SelectContent>
                         </Select>
+
+                        <Button 
+                            variant={showFilters ? 'default' : 'outline'}
+                            onClick={() => setShowFilters(!showFilters)}
+                        >
+                            <Filter className="w-4 h-4 mr-2" />
+                            Filtros
+                        </Button>
+
+                        <Button variant="outline" onClick={() => fetchExchangeRate()}>
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                            Tasa
+                        </Button>
+
                         <Button variant="outline">
                             <Download className="w-4 h-4 mr-2" />
                             Exportar
                         </Button>
                     </div>
                 </div>
+
+                {/* Filtros avanzados */}
+                {showFilters && (
+                    <Card className="animate-fade-in">
+                        <CardContent className="p-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">Fecha desde</label>
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                className={cn(
+                                                    "w-full justify-start text-left font-normal",
+                                                    !dateFrom && "text-muted-foreground"
+                                                )}
+                                            >
+                                                <Calendar className="mr-2 h-4 w-4" />
+                                                {dateFrom ? format(dateFrom, "PPP", { locale: es }) : "Seleccionar"}
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-0" align="start">
+                                            <CalendarComponent
+                                                mode="single"
+                                                selected={dateFrom}
+                                                onSelect={setDateFrom}
+                                                initialFocus
+                                                className="p-3 pointer-events-auto"
+                                            />
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">Fecha hasta</label>
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                className={cn(
+                                                    "w-full justify-start text-left font-normal",
+                                                    !dateTo && "text-muted-foreground"
+                                                )}
+                                            >
+                                                <Calendar className="mr-2 h-4 w-4" />
+                                                {dateTo ? format(dateTo, "PPP", { locale: es }) : "Seleccionar"}
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-0" align="start">
+                                            <CalendarComponent
+                                                mode="single"
+                                                selected={dateTo}
+                                                onSelect={setDateTo}
+                                                initialFocus
+                                                className="p-3 pointer-events-auto"
+                                            />
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">Método de pago</label>
+                                    <Select value={paymentFilter} onValueChange={setPaymentFilter}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Todos" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">Todos</SelectItem>
+                                            <SelectItem value="efectivo">Efectivo</SelectItem>
+                                            <SelectItem value="tarjeta">Tarjeta</SelectItem>
+                                            <SelectItem value="transferencia">Transferencia</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">&nbsp;</label>
+                                    <Button 
+                                        variant="secondary" 
+                                        className="w-full"
+                                        onClick={() => {
+                                            setDateFrom(undefined);
+                                            setDateTo(undefined);
+                                            setPaymentFilter('all');
+                                        }}
+                                    >
+                                        Limpiar filtros
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {/* Info de tasa de cambio */}
+                            <div className="mt-4 p-3 bg-muted rounded-lg flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <DollarSign className="w-4 h-4 text-muted-foreground" />
+                                    <span className="text-sm">
+                                        Tasa de cambio: <strong>1 USD = {formatDOP(storeConfig.exchangeRate.USD_DOP)}</strong>
+                                    </span>
+                                </div>
+                                <span className="text-xs text-muted-foreground">
+                                    Fuente: {storeConfig.exchangeRate.source} • 
+                                    {format(new Date(storeConfig.exchangeRate.lastUpdated), " dd/MM/yyyy HH:mm")}
+                                </span>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
 
                 {/* KPIs */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
