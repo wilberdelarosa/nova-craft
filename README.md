@@ -60,6 +60,26 @@ This project is built with:
 - shadcn-ui
 - Tailwind CSS
 
+## Capacitor platforms
+
+The project is already set up with Capacitor so you can build native Android and Electron desktop shells.
+
+1. Build the web assets (`npm run build`).
+2. Sync them into the native layers:
+	- `npm run cap:sync` keeps every captive platform up to date.
+	- `npm run android:sync` pushes web assets and plugins to the Android project.
+	- `npm run electron:sync` does the same for the Electron shell.
+3. Open each platform for testing:
+	```
+	npm run android:open
+	npm run electron:open
+	```
+	(Android Studio / your preferred IDE will launch for the selected folder.)
+
+Use a connected Android device or emulator to test the Android build. For Electron, the script launches the generated desktop app and copies the latest web output automatically.
+
+> Tip: When using a USB camera or mobile device during development, open the app on that device’s browser and allow camera permissions to let the barcode scanner find the right feed.
+
 ## How can I deploy this project?
 
 Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.

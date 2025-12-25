@@ -12,19 +12,22 @@ import Ventas from "./pages/Ventas";
 import Productos from "./pages/Productos";
 import Inventario from "./pages/Inventario";
 import Historial from "./pages/Historial";
+import Reportes from "./pages/Reportes";
+import CodigosBarras from "./pages/CodigosBarras";
 import Configuracion from "./pages/Configuracion";
 import NotFound from "./pages/NotFound";
+import ProductoDetalle from "./pages/ProductoDetalle";
 
 const queryClient = new QueryClient();
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useStore();
-  
+
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
-  
+
   return <>{children}</>;
 }
 
@@ -40,8 +43,11 @@ const App = () => (
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/ventas" element={<ProtectedRoute><Ventas /></ProtectedRoute>} />
           <Route path="/productos" element={<ProtectedRoute><Productos /></ProtectedRoute>} />
+          <Route path="/productos/:productId" element={<ProtectedRoute><ProductoDetalle /></ProtectedRoute>} />
           <Route path="/inventario" element={<ProtectedRoute><Inventario /></ProtectedRoute>} />
           <Route path="/historial" element={<ProtectedRoute><Historial /></ProtectedRoute>} />
+          <Route path="/reportes" element={<ProtectedRoute><Reportes /></ProtectedRoute>} />
+          <Route path="/codigos-barras" element={<ProtectedRoute><CodigosBarras /></ProtectedRoute>} />
           <Route path="/configuracion" element={<ProtectedRoute><Configuracion /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'app.lovable.0971035e798b41c78d2de4cecd61b258',
+  appId: 'com.lovable.stockmaster',
   appName: 'StockMaster - Inventario',
   webDir: 'dist',
   server: {

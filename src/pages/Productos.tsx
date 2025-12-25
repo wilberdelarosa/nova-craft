@@ -310,11 +310,12 @@ export default function Productos() {
                                     Ver detalles
                                   </Link>
                                 </DropdownMenuItem>
-                                <DropdownMenuItem asChild>
-                                  <Link to={`/productos/${product.id}/editar`}>
-                                    <Edit className="w-4 h-4 mr-2" />
-                                    Editar
-                                  </Link>
+                                <DropdownMenuItem
+                                  className="flex items-center gap-2" 
+                                  onClick={() => toast('Edición próximamente, pronto podrás actualizar productos desde aquí.')}
+                                >
+                                  <Edit className="w-4 h-4" />
+                                  Editar
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem 

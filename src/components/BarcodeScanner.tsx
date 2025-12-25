@@ -5,11 +5,19 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface BarcodeScannerProps {
   open: boolean;
@@ -22,31 +30,51 @@ export function BarcodeScanner({ open, onClose, onScan }: BarcodeScannerProps) {
   const [hasFlash, setHasFlash] = useState(false);
   const [flashOn, setFlashOn] = useState(false);
   const [cameras, setCameras] = useState<{ id: string; label: string }[]>([]);
-  const [currentCameraIndex, setCurrentCameraIndex] = useState(0);
+  const [currentCameraId, setCurrentCameraId] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState('Esperando cámara...');
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const isStartingRef = useRef(false);
 
   const stopScanner = useCallback(async () => {
-    if (scannerRef.current) {
-      try {
-        const state = scannerRef.current.getState();
-        if (state === Html5QrcodeScannerState.SCANNING) {
-          await scannerRef.current.stop();
-        }
-      } catch (err) {
-        console.error('Error stopping scanner:', err);
+    if (!scannerRef.current) return;
+
+    try {
+      const state = scannerRef.current.getState();
+      if (state === Html5QrcodeScannerState.SCANNING) {
+        await scannerRef.current.stop();
       }
+    } catch (err) {
+      console.error('Error stopping scanner:', err);
+    } finally {
+      try {
+        scannerRef.current.clear();
+      } catch {
+        // ignore clear failure
+      }
+      scannerRef.current = null;
+      setHasFlash(false);
+      setFlashOn(false);
     }
   }, []);
 
+  const handleClose = useCallback(async () => {
+    await stopScanner();
+    setFlashOn(false);
+    onClose();
+  }, [stopScanner, onClose]);
+
   const startScanner = useCallback(async (cameraId?: string) => {
-    if (!containerRef.current || !open) return;
+    if (!containerRef.current || !open || isStartingRef.current) return;
+    isStartingRef.current = true;
 
     try {
       await stopScanner();
+      if (!open || !containerRef.current) return;
+
+      setStatusMessage('Buscando cámaras disponibles...');
       setError(null);
 
-      // Get available cameras
       const devices = await Html5Qrcode.getCameras();
       if (devices.length === 0) {
         setError('No se detectó ninguna cámara');
@@ -54,11 +82,16 @@ export function BarcodeScanner({ open, onClose, onScan }: BarcodeScannerProps) {
       }
 
       setCameras(devices);
-      const camera = cameraId || devices[currentCameraIndex]?.id || devices[0].id;
+      const availableIds = devices.map((device) => device.id);
+      let camera = cameraId || (currentCameraId && availableIds.includes(currentCameraId) ? currentCameraId : null);
 
-      if (!scannerRef.current) {
-        scannerRef.current = new Html5Qrcode('barcode-scanner-container');
+      if (!camera) {
+        camera = devices[0].id;
       }
+
+      scannerRef.current = new Html5Qrcode('barcode-scanner-container');
+
+      setHasFlash(false);
 
       await scannerRef.current.start(
         camera,
@@ -77,32 +110,34 @@ export function BarcodeScanner({ open, onClose, onScan }: BarcodeScannerProps) {
         }
       );
 
-      // Check flash support
       const track = scannerRef.current.getRunningTrackSettings?.();
       if (track && 'torch' in track) {
         setHasFlash(true);
       }
-    } catch (err: any) {
+      setCurrentCameraId(camera);
+      setStatusMessage(
+        `Conectado a ${devices.find((device) => device.id === camera)?.label || camera}`
+      );
+    } catch (err: unknown) {
       console.error('Camera error:', err);
-      if (err?.message?.includes('Permission')) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('Permission')) {
         setError('Permiso de cámara denegado. Actívalo en la configuración del navegador.');
       } else {
-        setError('Error al acceder a la cámara');
+        setError(
+          'Error al acceder a la cámara. Verifica que el dispositivo USB esté conectado y que el navegador tenga permiso.'
+        );
       }
+    } finally {
+      isStartingRef.current = false;
     }
-  }, [open, currentCameraIndex, onScan, stopScanner]);
-
-  const handleClose = useCallback(async () => {
-    await stopScanner();
-    setFlashOn(false);
-    onClose();
-  }, [stopScanner, onClose]);
+  }, [open, currentCameraId, onScan, stopScanner, handleClose]);
 
   const toggleFlash = async () => {
     if (!scannerRef.current) return;
     try {
       await scannerRef.current.applyVideoConstraints({
-        // @ts-ignore - torch is valid but not typed
+        // @ts-expect-error - torch is valid but not typed by the library
         advanced: [{ torch: !flashOn }]
       });
       setFlashOn(!flashOn);
@@ -113,10 +148,24 @@ export function BarcodeScanner({ open, onClose, onScan }: BarcodeScannerProps) {
 
   const switchCamera = async () => {
     if (cameras.length < 2) return;
-    const nextIndex = (currentCameraIndex + 1) % cameras.length;
-    setCurrentCameraIndex(nextIndex);
-    await startScanner(cameras[nextIndex].id);
+    const currentIndex = cameras.findIndex((camera) => camera.id === currentCameraId);
+    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % cameras.length : 0;
+    const cameraId = cameras[nextIndex].id;
+    setCurrentCameraId(cameraId);
+    await startScanner(cameraId);
   };
+
+  const handleCameraSelect = useCallback(
+    async (id: string) => {
+      if (id === currentCameraId) return;
+      setCurrentCameraId(id);
+      await startScanner(id);
+      setStatusMessage(
+        `Seleccionaste ${cameras.find((camera) => camera.id === id)?.label || 'una cámara'}`
+      );
+    },
+    [currentCameraId, startScanner]
+  );
 
   useEffect(() => {
     if (open) {
@@ -142,9 +191,28 @@ export function BarcodeScanner({ open, onClose, onScan }: BarcodeScannerProps) {
             <Camera className="w-5 h-5" />
             Escanear Código
           </DialogTitle>
+          <DialogDescription>
+            Conecta la cámara USB o abre esta pantalla directamente en el celular que deseas usar, acepta los permisos, y luego selecciona la cámara desde la lista.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="relative">
+          {cameras.length > 0 && (
+            <div className="absolute top-3 right-3 z-10 pointer-events-auto">
+              <Select value={currentCameraId ?? ''} onValueChange={handleCameraSelect}>
+                <SelectTrigger className="w-[200px] text-sm">
+                  <SelectValue placeholder="Cámara" />
+                </SelectTrigger>
+                <SelectContent>
+                  {cameras.map((camera, index) => (
+                    <SelectItem key={camera.id} value={camera.id}>
+                      {camera.label || `Cámara ${index + 1}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div
             id="barcode-scanner-container"
             ref={containerRef}
@@ -206,6 +274,17 @@ export function BarcodeScanner({ open, onClose, onScan }: BarcodeScannerProps) {
                 <SwitchCamera className="w-5 h-5" />
               </Button>
             )}
+          </div>
+          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 text-center text-xs text-muted-foreground space-y-1">
+            <p>
+              Si usas un equipo USB o un celular conectado al ordenador, abre esta pantalla desde el navegador del dispositivo, acepta los permisos y selecciona la cámara correcta.
+            </p>
+            <p>
+              Si no aparece la cámara, desconecta/reconecta el dispositivo y vuelve a pulsar "Reintentar".
+            </p>
+            <p className="text-[11px] font-semibold text-foreground">
+              {statusMessage}
+            </p>
           </div>
         </div>
 
